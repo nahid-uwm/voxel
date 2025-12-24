@@ -1,5 +1,3 @@
-https://nahid-uwm.github.io/voxel/
-
 # VoxelSpace React Application
 
 This is a modern React application built with Vite, Tailwind CSS, and Three.js.
