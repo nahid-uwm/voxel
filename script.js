@@ -48,8 +48,12 @@ const ui = {
 
 // Three.js Globals
 let scene, camera, renderer, controls;
-let containerMesh, itemsMesh, gridHelper;
+let containerMesh, itemsMesh, gridHelper, highlightMesh, voxelAxes;
+let guideLines = { x: null, y: null, z: null };
+let labelPos = { x: new THREE.Vector3(), y: new THREE.Vector3(), z: new THREE.Vector3() };
+let labelsVisible = false;
 let itemsGroup;
+let raycaster, mouse;
 
 // Initialization
 function init() {
@@ -94,11 +98,56 @@ function initThree() {
     scene.add(dirLight);
 
     // Setup Groups
+    // Setup Groups
     itemsGroup = new THREE.Group();
     scene.add(itemsGroup);
 
+    // Highlight Mesh
+    const hlGeo = new THREE.BoxGeometry(1, 1, 1);
+    const hlEdges = new THREE.EdgesGeometry(hlGeo);
+    const hlMat = new THREE.LineBasicMaterial({ color: 0xffff00, depthTest: false, transparent: true, opacity: 0.8 });
+    highlightMesh = new THREE.LineSegments(hlEdges, hlMat);
+    highlightMesh.visible = false;
+    highlightMesh.visible = false;
+    scene.add(highlightMesh);
+
+    // Global Axes (Godot-like) - X: Red, Y: Green, Z: Blue
+    const globalAxes = new THREE.AxesHelper(100);
+    // AxesHelper colors are R, G, B by default.
+    scene.add(globalAxes);
+
+    // Selected Voxel Axes
+    voxelAxes = new THREE.AxesHelper(2); // Slightly larger than voxel (1.2m usually)
+    voxelAxes.visible = false;
+    // Ensure it renders on top if needed, or just let it depth test
+    scene.add(voxelAxes);
+
+    // Ensure it renders on top if needed, or just let it depth test
+    scene.add(voxelAxes);
+
+    // Guide Lines (Dotted)
+    const dashMatX = new THREE.LineDashedMaterial({ color: 0xff4d4d, dashSize: 0.2, gapSize: 0.1, depthTest: false, opacity: 0.7, transparent: true });
+    const dashMatY = new THREE.LineDashedMaterial({ color: 0x4dff4d, dashSize: 0.2, gapSize: 0.1, depthTest: false, opacity: 0.7, transparent: true });
+    const dashMatZ = new THREE.LineDashedMaterial({ color: 0x4d4dff, dashSize: 0.2, gapSize: 0.1, depthTest: false, opacity: 0.7, transparent: true });
+
+    guideLines.x = new THREE.Line(new THREE.BufferGeometry(), dashMatX);
+    guideLines.y = new THREE.Line(new THREE.BufferGeometry(), dashMatY);
+    guideLines.z = new THREE.Line(new THREE.BufferGeometry(), dashMatZ);
+
+    scene.add(guideLines.x);
+    scene.add(guideLines.y);
+    scene.add(guideLines.z);
+
+    // Interaction
+    raycaster = new THREE.Raycaster();
+    mouse = new THREE.Vector2();
+
     // Initial Resize
     window.addEventListener('resize', onResize);
+
+    // Canvas Listeners
+    renderer.domElement.addEventListener('click', onMouseClick);
+    renderer.domElement.addEventListener('contextmenu', onRightClick);
 }
 
 function initUI() {
@@ -177,6 +226,19 @@ function initUI() {
         controls.reset();
         fitCamera();
     });
+
+    // Interaction UI Listeners
+    document.querySelector('.close-info').addEventListener('click', () => {
+        document.getElementById('voxelInfo').classList.add('hidden');
+        if (highlightMesh) highlightMesh.visible = false;
+        if (voxelAxes) voxelAxes.visible = false;
+        hideGuides();
+    });
+
+    document.getElementById('btnUnhide').addEventListener('click', () => {
+        updateCalculation(); // Rebuilds scene, unhiding everything
+        document.getElementById('btnUnhide').style.display = 'none';
+    });
 }
 
 function syncInputs() {
@@ -241,7 +303,21 @@ function updateScene(X, Y, Z, total) {
     gridHelper = new THREE.GridHelper(Math.max(container.width, container.depth) * 2, 20, 0x334155, 0x1e293b);
     gridHelper.position.y = -container.height / 2 - 0.05;
     gridHelper.visible = state.gridVisible;
+    gridHelper.visible = state.gridVisible;
     itemsGroup.add(gridHelper);
+
+    // Hide highlight on update
+    if (highlightMesh) highlightMesh.visible = false;
+    if (voxelAxes) voxelAxes.visible = false;
+    hideGuides();
+
+    // Update Highlight scale
+    if (highlightMesh) {
+        const hsizeW = item.width * 1.05;
+        const hsizeH = item.height * 1.05;
+        const hsizeD = item.depth * 1.05;
+        highlightMesh.scale.set(hsizeW, hsizeH, hsizeD);
+    }
 
     // 2. Items Visualization
     // Optimization: If > 20000 items, render a solid block representing the filled volume to avoid lag
@@ -317,6 +393,205 @@ function animate() {
     requestAnimationFrame(animate);
     controls.update();
     renderer.render(scene, camera);
+    updateLabels();
+}
+
+function updateLabels() {
+    if (!labelsVisible) return;
+
+    const elements = {
+        x: document.getElementById('lblX'),
+        y: document.getElementById('lblY'),
+        z: document.getElementById('lblZ')
+    };
+
+    ['x', 'y', 'z'].forEach(axis => {
+        const pos = labelPos[axis].clone();
+        pos.project(camera); // -1 to 1
+
+        const x = (pos.x * 0.5 + 0.5) * window.innerWidth;
+        const y = -(pos.y * 0.5 - 0.5) * window.innerHeight;
+
+        const el = elements[axis];
+        if (Math.abs(pos.z) > 1) {
+            el.classList.add('hidden'); // Behind camera
+        } else {
+            el.style.left = `${x}px`;
+            el.style.top = `${y}px`;
+            el.classList.remove('hidden');
+        }
+    });
+}
+
+function hideGuides() {
+    if (guideLines.x) {
+        guideLines.x.visible = false;
+        guideLines.y.visible = false;
+        guideLines.z.visible = false;
+    }
+    labelsVisible = false;
+    ['lblX', 'lblY', 'lblZ'].forEach(id => document.getElementById(id).classList.add('hidden'));
+}
+
+// Interaction Functions
+
+function onMouseClick(event) {
+    // Correct mouse coordinates for canvas position
+    const rect = renderer.domElement.getBoundingClientRect();
+    mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+    raycaster.setFromCamera(mouse, camera);
+
+    // Intersect recursively
+    const intersects = raycaster.intersectObjects(itemsGroup.children, true);
+
+    if (intersects.length > 0) {
+        // Find the first instanced mesh
+        const hit = intersects.find(i => i.object.isInstancedMesh);
+
+        if (hit) {
+            const instanceId = hit.instanceId;
+            const mesh = hit.object;
+            const matrix = new THREE.Matrix4();
+            mesh.getMatrixAt(instanceId, matrix);
+            const position = new THREE.Vector3();
+            position.setFromMatrixPosition(matrix);
+
+            showVoxelInfo(position, instanceId);
+
+            // Highlight
+            highlightMesh.position.copy(position);
+            highlightMesh.visible = true;
+
+            // Show Voxel Axis
+            voxelAxes.position.copy(position);
+            voxelAxes.visible = true;
+
+            return;
+        }
+    }
+
+    // If we missed everything or hit non-voxel
+    document.getElementById('voxelInfo').classList.add('hidden');
+    highlightMesh.visible = false;
+    if (voxelAxes) voxelAxes.visible = false;
+    hideGuides();
+}
+
+function onRightClick(event) {
+    event.preventDefault(); // No context menu
+
+    const rect = renderer.domElement.getBoundingClientRect();
+    mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+    raycaster.setFromCamera(mouse, camera);
+    const intersects = raycaster.intersectObjects(itemsGroup.children, true);
+
+    const hit = intersects.find(i => i.object.isInstancedMesh);
+    if (hit) {
+        const instanceId = hit.instanceId;
+        const mesh = hit.object;
+
+        const matrix = new THREE.Matrix4();
+        mesh.getMatrixAt(instanceId, matrix);
+
+        const position = new THREE.Vector3();
+        const quaternion = new THREE.Quaternion();
+        const scale = new THREE.Vector3();
+        matrix.decompose(position, quaternion, scale);
+
+        // Hide by scaling to 0
+        const zeroScale = new THREE.Vector3(0, 0, 0);
+        matrix.compose(position, quaternion, zeroScale);
+
+        mesh.setMatrixAt(instanceId, matrix);
+        mesh.instanceMatrix.needsUpdate = true;
+
+        document.getElementById('btnUnhide').style.display = 'flex';
+
+        // Hide highlight if we just hid the highlighted voxel
+        // (optional, but good UX)
+        if (highlightMesh.visible && highlightMesh.position.distanceTo(position) < 0.01) {
+            highlightMesh.visible = false;
+            if (voxelAxes) voxelAxes.visible = false;
+            document.getElementById('voxelInfo').classList.add('hidden');
+        }
+    }
+}
+
+function updateGuides(target) {
+    // Path: (0,0,0) -> (x,0,0) -> (x,y,0) -> (x,y,z)
+
+    // X Segment
+    const p0 = new THREE.Vector3(0, 0, 0);
+    const p1 = new THREE.Vector3(target.x, 0, 0);
+    guideLines.x.geometry.setFromPoints([p0, p1]);
+    guideLines.x.computeLineDistances();
+    guideLines.x.visible = true;
+
+    // Y Segment
+    const p2 = new THREE.Vector3(target.x, target.y, 0);
+    guideLines.y.geometry.setFromPoints([p1, p2]);
+    guideLines.y.computeLineDistances();
+    guideLines.y.visible = true;
+
+    // Z Segment
+    const p3 = target.clone();
+    guideLines.z.geometry.setFromPoints([p2, p3]);
+    guideLines.z.computeLineDistances();
+    guideLines.z.visible = true;
+
+    // Label Positions (Midpoints)
+    labelPos.x.copy(p0).lerp(p1, 0.5);
+    labelPos.y.copy(p1).lerp(p2, 0.5);
+    labelPos.z.copy(p2).lerp(p3, 0.5);
+
+    // Label Content
+    document.getElementById('lblX').innerText = `x: ${target.x.toFixed(2)}`;
+    document.getElementById('lblY').innerText = `y: ${target.y.toFixed(2)}`;
+    document.getElementById('lblZ').innerText = `z: ${target.z.toFixed(2)}`;
+
+    labelsVisible = true;
+}
+
+function showVoxelInfo(position, instanceId) {
+    const infoPanel = document.getElementById('voxelInfo');
+
+    // Update DOM
+    document.getElementById('valX').innerText = position.x.toFixed(3) + ' m';
+    document.getElementById('valY').innerText = position.y.toFixed(3) + ' m';
+    document.getElementById('valZ').innerText = position.z.toFixed(3) + ' m';
+
+    // Calculate Indices
+    const { container, item } = state;
+    const cY = Math.floor(container.height / item.height);
+    const cZ = Math.floor(container.depth / item.depth);
+
+    // Start Positions (-Container/2)
+    const sx = -container.width / 2;
+    const sy = -container.height / 2;
+    const sz = -container.depth / 2;
+
+    // Decode instanceId: i = x * (Y*Z) + y * Z + z
+    // z changes fastest
+    let rem = instanceId;
+    const z = rem % cZ;
+    rem = Math.floor(rem / cZ);
+    const y = rem % cY;
+    const x = Math.floor(rem / cY); // Remaining is x
+
+    // Format equation: Start + (Index + 0.5) * Size
+    // We display: "Start + (i + 0.5) * Size" with numbers
+
+    const fmt = (n) => n.toFixed(2);
+
+    document.getElementById('eqX').innerText = `x = ${fmt(sx)} + (${x} + 0.5) * ${fmt(item.width)}`;
+    document.getElementById('eqY').innerText = `y = ${fmt(sy)} + (${y} + 0.5) * ${fmt(item.height)}`;
+    document.getElementById('eqZ').innerText = `z = ${fmt(sz)} + (${z} + 0.5) * ${fmt(item.depth)}`;
+
+    infoPanel.classList.remove('hidden');
 }
 
 // Start

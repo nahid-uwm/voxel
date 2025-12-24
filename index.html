@@ -162,6 +162,8 @@
                 <button class="btn-icon" id="btnGrid" title="Toggle Grid"><i class="ph ph-grid-four"></i></button>
                 <button class="btn-icon" id="btnReset" title="Reset Camera"><i
                         class="ph ph-arrow-counter-clockwise"></i></button>
+                <button class="btn-icon" id="btnUnhide" title="Unhide All" style="display: none;"><i
+                        class="ph ph-eye"></i></button>
                 <div class="sep"></div>
                 <button class="btn-primary" onclick="alert('Export not available in local mode')">
                     <i class="ph ph-download-simple"></i> Export
@@ -171,6 +173,42 @@
             <div class="loading-overlay" id="loading">
                 <div class="spinner"></div>
                 Initializing 3D Engine...
+            </div>
+
+            <!-- Axis Labels -->
+            <div id="lblX" class="axis-label hidden">x</div>
+            <div id="lblY" class="axis-label hidden">y</div>
+            <div id="lblZ" class="axis-label hidden">z</div>
+
+            <!-- Voxel Info Panel -->
+            <div id="voxelInfo" class="voxel-info hidden">
+                <div class="info-header">
+                    <i class="ph ph-cube"></i> Voxel Position
+                    <button class="close-info"><i class="ph ph-x"></i></button>
+                </div>
+                <div class="info-content">
+                    <div class="info-row">
+                        <span class="label">Center Relative X</span>
+                        <div class="value-group">
+                            <span class="equation" id="eqX">x = ...</span>
+                            <span class="exact" id="valX">...</span>
+                        </div>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">Center Relative Y</span>
+                        <div class="value-group">
+                            <span class="equation" id="eqY">y = ...</span>
+                            <span class="exact" id="valY">...</span>
+                        </div>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">Center Relative Z</span>
+                        <div class="value-group">
+                            <span class="equation" id="eqZ">z = ...</span>
+                            <span class="exact" id="valZ">...</span>
+                        </div>
+                    </div>
+                </div>
             </div>
         </main>
     </div>
