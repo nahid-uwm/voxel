@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VoxelSpace | Spatial Analysis</title>
+    <link rel="stylesheet" href="style.css">
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap"
+        rel="stylesheet">
+
+    <!-- Three.js (UMD Version for file:// compatibility) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+    <!-- Icons (Lucide - using a simple SVG sprite or similar, but for vanilla we'll use SVG strings in JS or simple text/Unicode for now to keep it zero-dep, OR CDN for an icon font. Let's use Phosphor Icons or FontAwesome CDN for simplicity) -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="brand">
+                <div class="logo-icon"><i class="ph-fill ph-cube"></i></div>
+                <div class="logo-text">
+                    <h1>VoxelSpace</h1>
+                    <span>Spatial Intelligence</span>
+                </div>
+            </div>
+
+            <div class="scroll-content">
+                <!-- Container Section -->
+                <section class="panel">
+                    <div class="panel-header">
+                        <i class="ph ph-package"></i>
+                        <h2>Container Dimensions</h2>
+                    </div>
+
+                    <div class="input-group">
+                        <label>Preset</label>
+                        <select id="containerPreset">
+                            <option value="custom">Custom</option>
+                            <option value="20ft" selected>20ft Container</option>
+                            <option value="40ft">40ft Standard</option>
+                            <option value="40hc">40ft High Cube</option>
+                        </select>
+                    </div>
+
+                    <div class="grid-3">
+                        <div class="input-wrapper">
+                            <label>Width (m)</label>
+                            <input type="number" id="cWidth" step="0.01" min="0.1">
+                        </div>
+                        <div class="input-wrapper">
+                            <label>Height (m)</label>
+                            <input type="number" id="cHeight" step="0.01" min="0.1">
+                        </div>
+                        <div class="input-wrapper">
+                            <label>Depth (m)</label>
+                            <input type="number" id="cDepth" step="0.01" min="0.1">
+                        </div>
+                    </div>
+                </section>
+
+                <div class="divider"></div>
+
+                <!-- Item Section -->
+                <section class="panel">
+                    <div class="panel-header">
+                        <i class="ph ph-cube-focus"></i>
+                        <h2>Item / Voxel Size</h2>
+                    </div>
+
+                    <div class="input-group">
+                        <label>Preset</label>
+                        <select id="itemPreset">
+                            <option value="custom">Custom</option>
+                            <option value="euro" selected>Euro Pallet</option>
+                            <option value="us">US Pallet</option>
+                            <option value="box">Standard Box (0.4m)</option>
+                        </select>
+                    </div>
+
+                    <div class="grid-3">
+                        <div class="input-wrapper">
+                            <label>Width (m)</label>
+                            <input type="number" id="iWidth" step="0.01" min="0.01">
+                        </div>
+                        <div class="input-wrapper">
+                            <label>Height (m)</label>
+                            <input type="number" id="iHeight" step="0.01" min="0.01">
+                        </div>
+                        <div class="input-wrapper">
+                            <label>Depth (m)</label>
+                            <input type="number" id="iDepth" step="0.01" min="0.01">
+                        </div>
+                    </div>
+
+                    <div class="checkbox-wrapper">
+                        <input type="checkbox" id="aspectLock">
+                        <label for="aspectLock">Lock Aspect Ratio (Cube)</label>
+                    </div>
+                </section>
+
+                <!-- Results Section -->
+                <div class="results-card">
+                    <div class="results-header">
+                        <i class="ph ph-chart-bar"></i> Analysis Results
+                    </div>
+
+                    <div class="main-stats">
+                        <div class="stat-item">
+                            <span class="label">Total Items</span>
+                            <span class="value" id="resTotal">0</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="label">Volume Eff.</span>
+                            <span class="value highlight" id="resEff">0%</span>
+                        </div>
+                    </div>
+
+                    <div class="details-list">
+                        <div class="detail-row">
+                            <span>Items along Width (X)</span>
+                            <span class="mono" id="resX">0</span>
+                        </div>
+                        <div class="detail-row">
+                            <span>Items along Height (Y)</span>
+                            <span class="mono" id="resY">0</span>
+                        </div>
+                        <div class="detail-row">
+                            <span>Items along Depth (Z)</span>
+                            <span class="mono" id="resZ">0</span>
+                        </div>
+                        <div class="line"></div>
+                        <div class="detail-row sm">
+                            <span>Container Vol</span>
+                            <span class="mono" id="resCVol">0 m³</span>
+                        </div>
+                        <div class="detail-row sm">
+                            <span>Total Item Vol</span>
+                            <span class="mono" id="resIVol">0 m³</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="footer">
+                VoxelSpace v1.0 &bull; Local Mode
+            </div>
+        </aside>
+
+        <!-- Main Viewport -->
+        <main class="viewport" id="viewport">
+            <div class="overlay-controls">
+                <button class="btn-icon" id="btnGrid" title="Toggle Grid"><i class="ph ph-grid-four"></i></button>
+                <button class="btn-icon" id="btnReset" title="Reset Camera"><i
+                        class="ph ph-arrow-counter-clockwise"></i></button>
+                <div class="sep"></div>
+                <button class="btn-primary" onclick="alert('Export not available in local mode')">
+                    <i class="ph ph-download-simple"></i> Export
+                </button>
+            </div>
+
+            <div class="loading-overlay" id="loading">
+                <div class="spinner"></div>
+                Initializing 3D Engine...
+            </div>
+        </main>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+
+</html>
